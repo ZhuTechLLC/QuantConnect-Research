@@ -68,7 +68,7 @@ class AdoptionFriction(str, Enum):
 
 @dataclass(frozen=True)
 class ClinicalOrProductContext:
-    """What the product/event actually changes in the real world.
+    """Biotech/medical-product causal context.
 
     Values must be point-in-time. Later full data may be stored in hindsight notes,
     never back-filled into an earlier event decision record.
@@ -88,6 +88,37 @@ class ClinicalOrProductContext:
     treatment_or_adoption_burden: str = "unknown"
     evidence_completeness: EvidenceCompleteness = EvidenceCompleteness.NOT_APPLICABLE
     regulatory_or_customer_validation_path: str = "unknown"
+
+
+@dataclass(frozen=True)
+class SemiconductorContext:
+    """Semiconductor/compute causal context.
+
+    This is separate from ClinicalOrProductContext because semiconductor events are
+    governed by architecture adoption, design wins, unit/ASP economics, customer capex,
+    supply constraints, software/ecosystem lock-in and manufacturing economics rather
+    than clinical endpoint hierarchy.
+    """
+
+    end_markets: str = "unknown"
+    demand_driver: str = "unknown"
+    product_or_architecture: str = "unknown"
+    value_chain_position: str = "unknown"
+    revenue_model: str = "unknown"
+    design_win_to_revenue_lag: str = "unknown"
+    units_vs_asp_mix: str = "unknown"
+    pricing_or_royalty_power: str = "unknown"
+    gross_margin_capture: str = "unknown"
+    software_or_ecosystem_moat: str = "unknown"
+    customer_capex_dependency: str = "unknown"
+    customer_concentration: str = "unknown"
+    supply_or_foundry_constraints: str = "unknown"
+    advanced_packaging_or_network_bottlenecks: str = "unknown"
+    inventory_cycle: str = "unknown"
+    competitive_substitutes: str = "unknown"
+    geographic_or_export_control_exposure: str = "unknown"
+    public_float_or_positioning_context: str = "unknown"
+    evidence_completeness: EvidenceCompleteness = EvidenceCompleteness.NOT_APPLICABLE
 
 
 @dataclass(frozen=True)
@@ -160,6 +191,7 @@ class EventRecord:
     sector_benchmark: str = "SPY"
     broad_benchmark: str = "SPY"
     clinical_or_product: ClinicalOrProductContext = field(default_factory=ClinicalOrProductContext)
+    semiconductor: SemiconductorContext = field(default_factory=SemiconductorContext)
     commercial: CommercialContext = field(default_factory=CommercialContext)
     company: CompanyContext = field(default_factory=CompanyContext)
     expectations: ExpectationContext = field(default_factory=ExpectationContext)
