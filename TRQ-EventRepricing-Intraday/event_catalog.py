@@ -23,12 +23,28 @@ class EvidenceGrade(str, Enum):
 
 
 class InformationStrength(str, Enum):
-    """Headline information magnitude, not a valuation or trade score."""
+    """Descriptive headline magnitude only; never an event-quality or trade score."""
 
     LOW = "low"
     MEDIUM = "medium"
     HIGH = "high"
     EXTREME = "extreme"
+
+
+class CausalPrior(str, Enum):
+    """Evidence-reviewed economic prior; never computed from market prices.
+
+    The labels intentionally preserve qualitative judgment. They are not ordinal
+    numeric scores and must not be mapped to fixed weights without a separately
+    validated research protocol.
+    """
+
+    UNREVIEWED = "unreviewed"
+    STRONGLY_CONSTRUCTIVE = "strongly_constructive"
+    CONSTRUCTIVE_INCOMPLETE = "constructive_incomplete"
+    MIXED_CONTRADICTORY = "mixed_contradictory"
+    ECONOMICALLY_LIMITED = "economically_limited"
+    NEGATIVE = "negative"
 
 
 class EvidenceCompleteness(str, Enum):
@@ -94,10 +110,9 @@ class ClinicalOrProductContext:
 class SemiconductorContext:
     """Semiconductor/compute causal context.
 
-    This is separate from ClinicalOrProductContext because semiconductor events are
-    governed by architecture adoption, design wins, unit/ASP economics, customer capex,
-    supply constraints, software/ecosystem lock-in and manufacturing economics rather
-    than clinical endpoint hierarchy.
+    Kept separate from clinical ontology because semiconductor events are governed by
+    architecture adoption, design wins, unit/ASP economics, customer capex, supply,
+    software/ecosystem lock-in and manufacturing economics.
     """
 
     end_markets: str = "unknown"
@@ -196,29 +211,41 @@ class EventRecord:
     company: CompanyContext = field(default_factory=CompanyContext)
     expectations: ExpectationContext = field(default_factory=ExpectationContext)
     macro_sector: MacroSectorContext = field(default_factory=MacroSectorContext)
-    causal_prior: str = "unreviewed"
+    causal_prior: CausalPrior = CausalPrior.UNREVIEWED
     causal_thesis: str = ""
+    causal_reviewed_at_et: datetime | None = None
+    causal_review_provenance: tuple[str, ...] = ()
     counterevidence: tuple[str, ...] = ()
     pit_source_notes: tuple[str, ...] = ()
     hindsight_validation_notes: tuple[str, ...] = ()
     notes: str = ""
 
     def passes_minimum_evidence_gate(self) -> bool:
-        """Minimum research gate only; never treat this as an event-quality score."""
+        """Minimum evidence gate only; never treat this as an event-quality score."""
         return self.direction > 0 and self.evidence_grade == EvidenceGrade.PRIMARY_VERIFIED
 
-    def is_trade_eligible_positive(self) -> bool:
-        """Compatibility helper for v1.
-
-        A high/extreme headline is necessary but explicitly insufficient. Production
-        trade eligibility additionally requires a reviewed causal prior and the
-        intraday state policy. This method must never be the sole order trigger.
-        """
+    def has_reviewed_constructive_prior(self) -> bool:
+        """Require explicit causal review before a positive event can become trade-eligible."""
         return (
-            self.passes_minimum_evidence_gate()
-            and self.information_strength in {InformationStrength.HIGH, InformationStrength.EXTREME}
-            and self.causal_prior not in {"unreviewed", "contradictory", "negative"}
+            self.causal_reviewed_at_et is not None
+            and bool(self.causal_thesis.strip())
+            and bool(self.causal_review_provenance)
+            and bool(self.counterevidence)
+            and self.causal_prior
+            in {
+                CausalPrior.STRONGLY_CONSTRUCTIVE,
+                CausalPrior.CONSTRUCTIVE_INCOMPLETE,
+            }
         )
+
+    def is_trade_eligible_positive(self) -> bool:
+        """Research gate, never the sole order trigger.
+
+        Headline magnitude is deliberately excluded: a small p-value, large TAM,
+        large earnings beat or large gap cannot make an event trade eligible without
+        a reviewed causal thesis. Intraday entry still requires the state policy.
+        """
+        return self.passes_minimum_evidence_gate() and self.has_reviewed_constructive_prior()
 
 
 # Seed metadata is deliberately sparse. Causal contexts are populated only after a
