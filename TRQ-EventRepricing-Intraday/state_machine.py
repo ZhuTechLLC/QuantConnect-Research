@@ -37,17 +37,39 @@ class StateThresholds:
 
 
 @dataclass(frozen=True)
+class TransitionThresholds:
+    """Semantic transition rules, separate from market-feature thresholds.
+
+    `SECOND_EXPANSION` means expansion *after* a confirmed balance regime. A raw
+    expansion candidate that occurs without prior balance is continuation of the
+    opening/rush price-discovery process, not a second leg.
+    """
+
+    min_balance_observations: int = 3
+    max_minutes_since_confirmed_balance: int = 15
+
+
+@dataclass(frozen=True)
 class StateDecision:
     state: RepricingState
     score: float
     reasons: tuple[str, ...]
 
 
-class EventRepricingStateMachine:
-    """Deterministic v1 state classifier.
+@dataclass(frozen=True)
+class TrackedStateDecision:
+    state: RepricingState
+    raw_state: RepricingState
+    score: float
+    reasons: tuple[str, ...]
 
-    The classifier intentionally uses multiple orthogonal features. No fixed price
-    level or support/resistance rule is allowed to trigger a state by itself.
+
+class EventRepricingStateMachine:
+    """Deterministic v1 raw-state classifier.
+
+    This layer classifies the current feature configuration. It deliberately uses
+    multiple orthogonal features and never uses a fixed support/resistance price.
+    Sequence semantics are enforced by `RepricingStateTracker` below.
     """
 
     def __init__(self, thresholds: StateThresholds | None = None) -> None:
@@ -197,5 +219,85 @@ class EventRepricingStateMachine:
         return StateDecision(
             RepricingState.PRICE_DISCOVERY,
             0.5,
-            ("features are mixed; no higher-confidence state",),
+            ("features are mixed; no higher-confidence raw state",),
+        )
+
+
+class RepricingStateTracker:
+    """Stateful transition layer for replay and eventual trading policy.
+
+    The raw classifier says what the current features resemble. The tracker decides
+    whether that label is semantically valid given the path that preceded it.
+
+    Most importantly, S5 is impossible without a previously confirmed S4. If an
+    expansion-like feature bundle appears before balance, it is labeled S1 because
+    it is still part of the initial price-discovery/rush process.
+    """
+
+    def __init__(self, thresholds: TransitionThresholds | None = None) -> None:
+        self.t = thresholds or TransitionThresholds()
+        self.reset()
+
+    def reset(self) -> None:
+        self.current_state: RepricingState | None = None
+        self.balance_streak = 0
+        self.last_confirmed_balance_minute: int | None = None
+
+    def update(self, f: FeatureSnapshot, raw: StateDecision) -> TrackedStateDecision:
+        raw_state = raw.state
+        reasons = list(raw.reasons)
+
+        if raw_state == RepricingState.ACCEPTANCE_BALANCE:
+            self.balance_streak += 1
+            if self.balance_streak >= self.t.min_balance_observations:
+                self.last_confirmed_balance_minute = f.minute
+                reasons.append(
+                    f"balance confirmed for >= {self.t.min_balance_observations} observations"
+                )
+            self.current_state = RepricingState.ACCEPTANCE_BALANCE
+            return TrackedStateDecision(
+                state=self.current_state,
+                raw_state=raw_state,
+                score=raw.score,
+                reasons=tuple(reasons),
+            )
+
+        # Any non-balance raw observation ends the current consecutive balance streak,
+        # but a recently confirmed balance remains eligible to seed a second leg.
+        self.balance_streak = 0
+
+        if raw_state == RepricingState.SECOND_EXPANSION:
+            recently_balanced = (
+                self.last_confirmed_balance_minute is not None
+                and 0
+                <= f.minute - self.last_confirmed_balance_minute
+                <= self.t.max_minutes_since_confirmed_balance
+            )
+            if self.current_state == RepricingState.SECOND_EXPANSION or recently_balanced:
+                self.current_state = RepricingState.SECOND_EXPANSION
+                reasons.append("expansion follows a confirmed recent balance regime")
+            else:
+                self.current_state = RepricingState.RUSH_CONTINUATION
+                reasons.append(
+                    "expansion-like raw signal without confirmed prior balance; "
+                    "classified as rush continuation, not second expansion"
+                )
+            return TrackedStateDecision(
+                state=self.current_state,
+                raw_state=raw_state,
+                score=raw.score,
+                reasons=tuple(reasons),
+            )
+
+        if raw_state == RepricingState.FAILED_EXTENSION_DISTRIBUTION:
+            # A material distribution state invalidates an older balance anchor. A later
+            # S5 therefore requires a newly established S4 rather than reusing stale balance.
+            self.last_confirmed_balance_minute = None
+
+        self.current_state = raw_state
+        return TrackedStateDecision(
+            state=self.current_state,
+            raw_state=raw_state,
+            score=raw.score,
+            reasons=tuple(reasons),
         )
