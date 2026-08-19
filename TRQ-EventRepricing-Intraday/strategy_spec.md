@@ -2,11 +2,11 @@
 
 ## Purpose
 
-Research and trade large positive event-day repricing without relying on deterministic support/resistance or breakout narratives. The model separates event quality from intraday state and uses only point-in-time information available at each decision timestamp.
+Research and trade large positive event-day repricing without relying on deterministic support/resistance or breakout narratives. The model separates **causal event underwriting** from **intraday market-state inference** and uses only point-in-time information available at each decision timestamp.
 
 ## Scope
 
-v1 only covers verified positive fundamental events with material price repricing:
+v1 covers verified positive fundamental events with material price repricing:
 
 - Biotech: Phase II, Phase III, FDA/regulatory decisions.
 - Semiconductors/large-cap technology: earnings, guidance, major product or demand shocks.
@@ -15,309 +15,262 @@ v1 does not trade unverified social-media catalysts, rumor-only gaps, short sque
 
 ## Core Principle
 
-Event quality determines directional prior. Intraday microstructure determines whether and when to trade.
+**Event causality determines the directional/economic prior. Intraday microstructure determines whether and when to trade.**
 
 The strategy must not use support/resistance or breakout levels as primary signal features. Price levels may be logged descriptively, but they cannot independently trigger entry or exit.
 
+A large gap, a small p-value, a Phase III primary-endpoint win, a large addressable market, or an earnings beat is never sufficient by itself. The same numerical event can have radically different shareholder value implications depending on disease severity, unmet need, endpoint quality, safety, durability, standard of care, competition, economic ownership, pricing/reimbursement, commercialization readiness, financing needs, company maturity, prior expectations and the macro/sector regime.
+
+## Two-Layer Architecture
+
+### Layer 1 — Causal Event Underwriting
+
+This layer answers **why the stock should be worth materially more or less after the event**. It is built from primary/authoritative evidence and is point-in-time.
+
+It does not look at future returns and it does not use intraday price success to retroactively label an event as high quality.
+
+Required domains:
+
+#### A. Clinical / Product Evidence
+- disease or end market;
+- addressable patient/customer population available at the event timestamp;
+- disease severity / customer pain;
+- unmet need;
+- current standard of care / incumbent;
+- trial phase or product maturity;
+- trial design, control arm and population;
+- primary endpoint result and effect magnitude;
+- secondary endpoints;
+- hard outcomes, durability and follow-up when available;
+- subgroup consistency;
+- safety/reliability;
+- evidence completeness: topline partial vs rich topline vs full data;
+- regulatory/customer validation path;
+- treatment/adoption burden.
+
+#### B. Commercial Translation
+- business model;
+- who owns the economics;
+- partner, profit-share, royalty or licensing obligations;
+- commercialization readiness and sales infrastructure;
+- existing revenue base;
+- likely pricing/reimbursement/contracting constraints;
+- competition and differentiation;
+- adoption friction;
+- manufacturing/distribution constraints when material;
+- financing/dilution risk;
+- margin and operating-leverage implications.
+
+#### C. Company Context
+- pre-revenue / early-commercial / commercial / mature;
+- market-cap context at the event timestamp;
+- cash runway and balance sheet;
+- profitability/cash-burn context;
+- product/customer concentration;
+- strategic platform optionality.
+
+#### D. Expectations and Surprise
+- evidence already known before the event;
+- contemporaneous consensus/narrative where supportable;
+- key bear and bull cases before the event;
+- what uncertainty the event actually removed;
+- what uncertainty remained immediately after the event;
+- whether the dominant shareholder-value driver changed;
+- event increment versus prior expectation.
+
+#### E. Macro / Sector Transmission
+Macro is not a generic score. Record only the causal path:
+- monetary/liquidity regime;
+- broad-market regime;
+- sector cycle;
+- rates/risk-premium/funding conditions when they matter;
+- event-day sector and broad benchmark moves;
+- explicit transmission to valuation, financing, demand or adoption.
+
+For company-specific biotech readouts, macro is often a secondary valuation/risk-budget overlay. For semiconductors, industry demand, capex, inventory, hyperscaler spending, rates and broad risk appetite may be much more directly relevant.
+
+### Causal Prior
+
+The output is a **reviewed causal prior**, not a weighted score.
+
+Allowed working labels may include:
+- strongly constructive;
+- constructive but incomplete;
+- mixed/contradictory;
+- economically limited despite positive headline;
+- unreviewed.
+
+Every label must be accompanied by a short causal thesis and explicit counterevidence.
+
+The prior can change when new public evidence arrives, but later full data may not be back-filled into an earlier timestamp.
+
+### Layer 2 — Intraday State Inference
+
+This layer answers **how the market is currently processing the event**. It uses price, volume, volatility and relative/residual-return features. It does not reinterpret the clinical or commercial facts.
+
+The same state engine may be shared across biotech and semiconductor events, while the causal priors remain domain-specific.
+
 ## Point-in-Time Event Record
 
-Each event requires:
-
-- ticker
-- event_id
-- event_type: PHASE2 | PHASE3 | FDA | EARNINGS | GUIDANCE | PRODUCT | DEMAND | OTHER
-- event_timestamp_et
-- direction
-- evidence_grade: primary_verified | authoritative_secondary | unverified
-- information_strength: low | medium | high | extreme
-- full_data_available: bool
-- primary_endpoint_status when applicable
-- secondary_endpoint_status when applicable
-- safety_signal_status when applicable
-- pre_event_market_expectation_notes
-- previous_close
-- premarket_return when available
-- sector_benchmark
-- broad_benchmark
-
-### Event Quality Prior
-
-The prior must distinguish:
-
-1. Endpoint/result quality.
-2. Magnitude versus prior expectation.
-3. Completeness of disclosed evidence.
-4. Safety/regulatory uncertainty.
-5. Commercial relevance.
-6. Whether the information changes probability of success, earnings path, or terminal value.
-
-A nominally positive headline is not automatically high quality. Example: a primary endpoint can be positive while secondary endpoints, durability, safety, or expected commercial impact weaken the event.
+Each event requires at minimum:
+- ticker, event_id, event_type, event_timestamp_et;
+- direction and evidence grade;
+- evidence completeness;
+- clinical/product context when applicable;
+- commercial context;
+- company context;
+- expectation context;
+- macro/sector transmission context;
+- reviewed causal prior and causal thesis;
+- counterevidence;
+- PIT source notes;
+- separate hindsight-validation notes;
+- sector and broad benchmarks.
 
 ## State Machine
 
 ### S0 PRICE_DISCOVERY
-
 Opening information absorption. Default no-entry state.
 
-Typical characteristics:
-- very high realized volatility;
-- very high relative volume;
-- unstable direction;
-- low confidence in path persistence.
-
 ### S1 RUSH_CONTINUATION
-
-Fast directional price discovery after the open.
-
-Characteristics:
-- high path efficiency in event direction;
-- positive residual return versus sector/broad benchmark;
-- expanding or sustained realized volatility;
-- high volume participation.
-
-v1 observes but does not initiate during the first rush by default.
+Fast directional price discovery after the open. v1 observes but does not initiate during the first rush by default.
 
 ### S2 RUSH_EXHAUSTION
-
-The initial directional move loses efficiency.
-
-Characteristics:
-- running peak ages;
-- normalized retracement rises;
-- path efficiency falls;
-- volume and realized volatility begin to decay;
-- rebound attempts become less efficient.
+The initial directional move loses efficiency: peak age rises, normalized retracement rises, path efficiency falls, and volume/realized volatility begin to decay.
 
 ### S3 FAILED_EXTENSION_DISTRIBUTION
-
-Post-rush reversal becomes persistent rather than a normal pullback.
-
-Characteristics:
-- negative residual return over multiple windows;
-- weak rebound efficiency;
-- downward path efficiency increases;
-- retracement deepens while peak age increases;
-- failed recovery attempts occur without relying on fixed price levels.
+Post-rush reversal becomes persistent: negative residual returns, weak rebound efficiency, increasing downward path efficiency and deepening retracement.
 
 ### S4 ACCEPTANCE_BALANCE
-
-The market forms a temporary new equilibrium after the rush/exhaustion.
-
-Characteristics:
-- realized volatility contraction;
-- volume contraction relative to event-day opening intensity;
-- low short-window path efficiency;
-- reduced directional residual return;
-- narrower return distribution.
+A temporary new equilibrium: volatility and volume contract, directional residual return weakens and short-window path efficiency becomes low.
 
 ### S5 SECOND_EXPANSION
+A new directional move emerges from S4: return and volume surprise re-expand, residual return becomes materially directional and path efficiency increases.
 
-A new directional move emerges from S4.
-
-Characteristics:
-- return z-score expands in event direction;
-- volume surprise re-expands;
-- residual return turns materially positive;
-- path efficiency increases;
-- realized volatility expands from a lower base.
-
-Entry is based on state transition evidence, not a fixed price breakout.
+Entry is based on state-transition evidence, not a fixed price breakout.
 
 ## Point-in-Time Features
 
 All features must be computable using only observations available through time t.
 
 ### Return Features
-- gap_return
-- return_1m
-- return_5m
-- return_15m
-- return_30m
-- return_from_open
-- residual_return_5m
-- residual_return_15m
-- residual_return_30m
+- gap_return; return_1m/5m/15m/30m; return_from_open;
+- residual_return_5m/15m/30m.
 
 ### Path Features
-- running_high
-- running_low
-- peak_age_minutes
-- trough_age_minutes
-- normalized_retracement = (running_high - price) / max(running_high - open, epsilon) for positive event days
-- rebound_efficiency = (bounce_high - local_trough) / max(prior_peak - local_trough, epsilon)
-- path_efficiency_5m
-- path_efficiency_15m
-- path_efficiency_30m
-
-Path efficiency:
+- running_high/running_low;
+- peak_age_minutes/trough_age_minutes;
+- normalized_retracement using running high only;
+- rebound_efficiency;
+- path_efficiency_5m/15m/30m.
 
 PE = abs(P_t - P_start) / sum(abs(delta_P_i))
 
 ### Volatility Features
-- rv_5m
-- rv_15m
-- rv_30m
-- rv_ratio_5_30
-- rv_ratio_15_30
-- volatility_decay
+- rv_5m/15m/30m;
+- rv_ratio_5_30 / rv_ratio_15_30;
+- volatility_decay.
 
 ### Volume Features
-- cumulative_volume
-- cumulative_rvol_same_time
-- volume_z_5m
-- volume_z_15m
-- opening_volume_share
-- volume_decay_ratio
+- cumulative_volume;
+- cumulative_rvol_same_time;
+- volume_z_5m/15m;
+- opening_volume_share;
+- volume_decay_ratio.
 
 Historical same-time volume baselines must use only dates prior to the event date.
 
 ### VWAP Features
-- cumulative_vwap
-- vwap_distance
-- vwap_distance_z
+- cumulative_vwap;
+- vwap_distance;
+- vwap_distance_z.
 
 VWAP is a state variable, not support/resistance.
 
 ### Relative/Residual Features
-For biotech:
-- XBI return
-- QQQ/SPY return
+Biotech: XBI + broad benchmark. Semiconductors: SOXX/SMH + QQQ where available.
 
-For semiconductors:
-- SOXX/SMH return when available
-- QQQ return
-
-Residual return should be estimated using rolling pre-event betas or a simple clearly documented benchmark-adjustment model. No future data allowed.
+Residual return must use a documented past-only benchmark-adjustment model.
 
 ### Optional Quote/Order-Flow Features
-Not required in v1:
-- bid-ask spread
-- quote imbalance
-- order-flow imbalance
+Not required in v1: spread, quote imbalance, order-flow imbalance. Add only when backtest/live data parity is verified.
 
-These can be added only when data availability is consistent across backtest/live environments.
+## Trading Policies
 
-## v1 Trading Policies
+### Policy A — Post-Rush Fade
+Research-only until validated. Requires joint evidence of S2→S3 deterioration; never trigger solely from gap size or distance from prior close.
 
-### Policy A: Post-Rush Fade
-
-Research-only until validated.
-
-Candidate condition requires a combination of:
-- state S2 transitioning to S3;
-- peak_age above threshold;
-- normalized_retracement above threshold;
-- rebound_efficiency below threshold;
-- negative residual_return_15m;
-- increasing downward path efficiency.
-
-No short entry solely because gap size is large or price is far above prior close.
-
-### Policy B: Post-Rush Second Expansion
-
-Primary v1 strategy candidate.
-
-Entry candidate requires:
-- verified positive event quality at or above configured threshold;
-- S4 balance state established;
+### Policy B — Post-Rush Second Expansion
+Primary v1 candidate. Requires:
+- reviewed causal prior that remains constructive;
+- no contradictory new event evidence;
+- S4 balance established;
 - transition evidence toward S5;
-- return_z_5m above threshold;
-- volume_z_5m above threshold;
-- residual_return_5m positive and improving;
-- path_efficiency_5m/15m rising;
-- no material contradictory new event evidence.
+- return/volume/residual/path-efficiency re-expansion.
+
+A constructive causal prior is necessary but not sufficient. A strong S5 microstructure state cannot rescue a contradictory/poorly-understood event without an explicit research override.
 
 ## Risk
 
-Initial research parameters, to be optimized only through walk-forward validation:
+Initial research parameters only:
+- risk_per_trade_nav: 0.15%-0.30%;
+- max_symbol_daily_loss_nav: 0.50%-0.60%;
+- max_attempts_per_symbol_per_day: 2;
+- time_stop_minutes: 10-20;
+- no short-dated options in v1.
 
-- risk_per_trade_nav: 0.15% to 0.30%
-- max_symbol_daily_loss_nav: 0.50% to 0.60%
-- max_attempts_per_symbol_per_day: 2
-- time_stop_minutes: 10 to 20
-- no short-dated options in v1
-
-Position sizing is volatility-based rather than fixed-share or fixed-percent stop based.
-
-Approximate form:
-
-shares = risk_budget / expected_volatility_loss_per_share
-
-The exact estimator must be specified in code and validated against realized event-day volatility.
+Position sizing is volatility-based. Exact estimators must be validated against event-day realized volatility.
 
 ## Exit Logic
 
-Exit when one or more occur:
-
-- expected state transition fails within the time stop;
-- residual return loses the expected sign and persistence;
-- path efficiency collapses;
-- volatility expansion fails after S5 entry;
-- risk budget or daily loss limit is hit;
-- material contradictory event evidence arrives.
-
-Fixed support/resistance price stops are not primary exits.
+Exit when the expected state transition fails, residual return loses expected persistence, path efficiency collapses, volatility expansion fails after S5 entry, risk limits are hit, or contradictory new evidence arrives. Fixed support/resistance stops are not primary exits.
 
 ## Labels
 
-Do not train on next-bar direction as the primary objective.
-
-Store forward outcomes at:
-- 5m
-- 15m
-- 30m
-- 60m
-- close
-- next_open
-- next_close
-
-For each decision timestamp store:
-- forward_return
-- MAE
-- MFE
-- time_to_MAE
-- time_to_MFE
+Do not train primarily on next-bar direction. Store forward outcomes at 5m, 15m, 30m, 60m, close, next_open and next_close, plus MAE/MFE and timing.
 
 ## Backtest Integrity
 
-### Mandatory anti-lookahead rules
-- Use running intraday high/low, never final HOD/LOD before they occur.
-- Event timestamps must reflect actual public availability.
-- Historical volume baselines use prior dates only.
-- Rolling betas and z-scores use only past observations.
-- Same event cannot be split across train/validation/test.
-- No future analyst revisions or later full clinical data may alter the event record at earlier timestamps.
+Mandatory:
+- running HOD/LOD only;
+- actual public event timestamps;
+- prior-only volume baselines, betas and z-scores;
+- no event leakage across train/validation/test;
+- no later analyst revisions/full clinical data back-filled into earlier records;
+- causal-prior labels cannot be derived from future price performance.
 
-### Validation sequence
-1. Golden case replay.
-2. Expanded event sample.
-3. Walk-forward validation.
-4. Slippage/latency stress tests.
-5. Paper live.
-6. Micro-live.
+Validation sequence:
+1. causal case audit;
+2. golden case replay;
+3. expanded event sample;
+4. walk-forward validation;
+5. slippage/latency stress tests;
+6. paper live;
+7. micro-live.
 
-## Golden Seed Cases
+## Golden / Adversarial Case Philosophy
 
-Existing seed cases:
-- MRNA 2026-08-19 Phase III oncology event
-- VKTX 2024-02-27 Phase II obesity event
-- MDGL 2022-12-19 Phase III NASH event
-- SMMT 2024-09-09 Phase III oncology event
-- NVDA 2023-05-25 earnings/guidance event
-- MU 2024-03-21 earnings/guidance event
+Cases are not selected merely because their gaps differ. They are selected because the **causal chain from event evidence to shareholder value differs**.
 
-Adversarial cases will be added before thresholds are frozen.
+Each case review must answer:
+1. What exactly changed scientifically/product-wise?
+2. How big and valuable is the addressable problem?
+3. Who captures the economics and with what friction?
+4. What did investors plausibly expect beforehand?
+5. Which uncertainties disappeared and which remained?
+6. How did macro/sector conditions transmit into the stock, if at all?
+7. How much of the move was company-specific residual repricing?
+8. Only then: how did Morning Rush, exhaustion, balance, continuation or distribution unfold?
 
 ## Provisional Validation Gates
 
-These are internal research gates, not claims of optimality:
-
+Internal research gates, not claims of optimality:
 - positive after-cost expectancy in a majority of walk-forward folds;
 - aggregate profit factor approximately >1.2;
-- positive expectancy under 2x base slippage stress;
-- no single event contributes more than roughly 20%-25% of total PnL;
-- small parameter perturbations do not destroy the edge;
-- performance is reported separately by event type, gap bucket, market-cap bucket, and year;
-- bootstrap uncertainty is reported.
+- positive expectancy under 2x slippage stress;
+- no single event contributes >20%-25% of PnL;
+- modest parameter perturbations do not destroy the edge;
+- performance reported by event type, causal-prior category, gap bucket, market-cap bucket, macro/sector regime and year;
+- bootstrap uncertainty reported.
 
-Failure to pass means research continues; no live capital deployment.
+Failure means research continues; no live capital deployment.
