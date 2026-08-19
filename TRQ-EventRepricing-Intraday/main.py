@@ -1,17 +1,16 @@
 from AlgorithmImports import *
-from datetime import datetime
 
 from feature_engine import Bar, IntradayFeatureEngine
-from state_machine import EventRepricingStateMachine
+from state_machine import EventRepricingStateMachine, RepricingStateTracker
 
 
 class EventRepricingIntradayAlgorithm(QCAlgorithm):
-    """v1 case-replay adapter.
+    """Golden-case replay adapter.
 
-    This first LEAN integration does NOT place orders. It streams point-in-time
-    minute bars into the feature engine, classifies the event-day state, and logs
-    transitions for golden-case validation. Trading is enabled only after state
-    replay and anti-lookahead validation pass.
+    No orders are placed. Historical minute bars are streamed through the PIT feature
+    engine, raw classifier and stateful transition tracker. Logs intentionally expose
+    both raw and tracked states so semantic downgrades (for example raw S5 without a
+    prior confirmed S4) remain auditable.
     """
 
     def initialize(self):
@@ -39,12 +38,15 @@ class EventRepricingIntradayAlgorithm(QCAlgorithm):
 
         self.feature_engine = IntradayFeatureEngine(opening_window_minutes=30)
         self.state_machine = EventRepricingStateMachine()
+        self.state_tracker = RepricingStateTracker()
 
         self.event_bars = []
         self.sector_bars = []
         self.broad_bars = []
-        self.last_state = None
+        self.last_tracked_state = None
         self.session_date = None
+        self.state_counts = {}
+        self.transition_count = 0
 
     def on_data(self, data: Slice):
         if not self.securities[self.event_symbol].exchange.hours.is_open(self.time, False):
@@ -61,7 +63,10 @@ class EventRepricingIntradayAlgorithm(QCAlgorithm):
             self.event_bars.clear()
             self.sector_bars.clear()
             self.broad_bars.clear()
-            self.last_state = None
+            self.last_tracked_state = None
+            self.state_tracker.reset()
+            self.state_counts.clear()
+            self.transition_count = 0
 
         minute = (self.time.hour * 60 + self.time.minute) - (9 * 60 + 30)
         if minute < 0:
@@ -76,12 +81,18 @@ class EventRepricingIntradayAlgorithm(QCAlgorithm):
             benchmark_bars=self.broad_bars,
             sector_bars=self.sector_bars,
         )
-        decision = self.state_machine.classify(features)
+        raw = self.state_machine.classify(features)
+        decision = self.state_tracker.update(features, raw)
 
-        if decision.state != self.last_state:
-            self.last_state = decision.state
+        state_name = decision.state.value
+        self.state_counts[state_name] = self.state_counts.get(state_name, 0) + 1
+
+        if decision.state != self.last_tracked_state:
+            self.transition_count += 1
+            self.last_tracked_state = decision.state
             self.log(
-                f"STATE|{self.time}|{self.event_symbol.value}|{decision.state.value}|"
+                f"STATE|{self.time}|{self.event_symbol.value}|"
+                f"tracked={decision.state.value}|raw={decision.raw_state.value}|"
                 f"score={decision.score:.2f}|px={features.price:.4f}|"
                 f"ret5={features.return_5m:.4%}|ret15={features.return_15m:.4%}|"
                 f"retr={features.normalized_retracement:.3f}|"
@@ -92,6 +103,24 @@ class EventRepricingIntradayAlgorithm(QCAlgorithm):
                 f"res5={features.residual_return_5m:.4%}|res15={features.residual_return_15m:.4%}|"
                 f"reasons={';'.join(decision.reasons)}"
             )
+
+        # Sparse periodic trace keeps case replay auditable even when tracked state does
+        # not transition for a long interval. It is descriptive only, never a signal.
+        if minute in {15, 30, 60, 90, 120, 180, 270, 360}:
+            self.log(
+                f"TRACE|{self.time}|{self.event_symbol.value}|"
+                f"tracked={decision.state.value}|raw={decision.raw_state.value}|"
+                f"px={features.price:.4f}|retr={features.normalized_retracement:.3f}|"
+                f"pe15={features.path_efficiency_15m:.3f}|rv5_30={features.rv_ratio_5_30:.3f}|"
+                f"res5={features.residual_return_5m:.4%}|res15={features.residual_return_15m:.4%}"
+            )
+
+    def on_end_of_algorithm(self):
+        counts = ",".join(f"{k}:{v}" for k, v in sorted(self.state_counts.items()))
+        self.log(
+            f"SUMMARY|{self.event_symbol.value}|date={self.session_date}|"
+            f"transitions={self.transition_count}|counts={counts}"
+        )
 
     @staticmethod
     def _to_bar(minute: int, trade_bar: TradeBar) -> Bar:
